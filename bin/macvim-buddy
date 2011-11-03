@@ -8,12 +8,14 @@ require 'httparty'
 class MacVimBuddy < Thor
   desc "build-from-git", "Build the latest MacVim HEAD from GitHub"
   def build_from_git
-    ensure_which :port, :git, :make
+    ensure_which :git, :make
 
     with_system_ruby do
       system %{bash -c "cd /tmp && rm -Rf macvim && git clone git://github.com/b4winckler/macvim.git"}
 
-      if is_macports = %x{which iconv}['/opt/local']
+      is_macports = false
+      %x{which port 2>&1}
+      if if $?.exitstatus == 0 && (is_macports = %x{which iconv}['/opt/local'])
         with_sudo { "port deactivate -f libiconv" }
       end
 
