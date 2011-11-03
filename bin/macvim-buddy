@@ -15,7 +15,7 @@ class MacVimBuddy < Thor
 
       is_macports = false
       %x{which port 2>&1}
-      if if $?.exitstatus == 0 && (is_macports = %x{which iconv}['/opt/local'])
+      if $?.exitstatus == 0 && (is_macports = %x{which iconv}['/opt/local'])
         with_sudo { "port deactivate -f libiconv" }
       end
 
