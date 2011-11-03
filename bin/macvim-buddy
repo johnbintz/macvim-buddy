@@ -3,6 +3,7 @@
 require 'thor'
 require 'pathname'
 require 'rainbow'
+require 'httparty'
 
 class MacVimBuddy < Thor
   desc "build-from-git", "Build the latest MacVim HEAD from GitHub"
@@ -70,6 +71,32 @@ class MacVimBuddy < Thor
   url = #{url}
 GIT
       end
+    end
+
+    desc "pathogen bootstrap", "Bootstrap your .vimrc with pathogen"
+    def bootstrap
+      system %{bash -c "cd ~ && mkdir -p .vim/autoload .vim/bundle"}
+      File.open(File.expand_path('~/.vim/autoload/pathogen.vim'), 'wb') { |fh| 
+        fh.print HTTParty.get('https://raw.github.com/tpope/vim-pathogen/HEAD/autoload/pathogen.vim').body
+      }
+
+      if !File.file?(vimrc = File.expand_path('~/.vimrc'))
+        vimrc_content = <<-VIM
+call pathogen#infect()
+syntax on
+filetype plugin indent on
+VIM
+      else
+        vimrc_content = File.read(vimrc)
+
+        if !vimrc_content['call pathogen#infect()']
+          vimrc_content = "call pathogen#infect()\n#{vimrc_content}"
+        end
+      end
+
+      File.open(vimrc, 'wb') { |fh| fh.print vimrc_content }
+
+      puts "Pathogen installed into your .vimrc"
     end
 
     desc "pathogen install GIT_REPO", "Install a plugin from a git repo"
