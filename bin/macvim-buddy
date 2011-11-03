@@ -1,0 +1,161 @@
+#!/usr/bin/env ruby
+
+require 'thor'
+require 'pathname'
+require 'rainbow'
+
+class MacVimBuddy < Thor
+  desc "build-from-git", "Build the latest MacVim HEAD from GitHub"
+  def build_from_git
+    ensure_which :port, :git, :make
+
+    with_system_ruby do
+      system %{bash -c "cd /tmp && rm -Rf macvim && git clone git://github.com/b4winckler/macvim.git"}
+
+      if is_macports = %x{which iconv}['/opt/local']
+        with_sudo { "port deactivate -f libiconv" }
+      end
+
+      system %{bash -c "cd /tmp/macvim/src && ./configure --with-features=huge --enable-rubyinterp --enable-pythoninterp --enable-perlinterp --enable-cscpe && make"}
+
+      if is_macports
+        with_sudo { "port activate libiconv" }
+      end
+
+      system %{cp -Rpv /tmp/macvim/src/MacVim/build/Release/MacVim.app /Applications}
+
+      system %{/Applications/MacVim.app/Contents/MacOS/Vim --version}
+    end
+  end
+
+  class Pathogen < Thor
+    BUNDLE_PATH = Pathname(File.expand_path('~/.vim/bundle'))
+    MODULES_PATH = File.expand_path('~/.gitmodules')
+
+    class GitSubmodule
+      class << self
+        def read(file)
+          submodules = []
+          submodule = nil
+
+          lines = File.readlines(file)
+
+          lines.each do |line|
+            case line
+            when %r{submodule "(.+)"}
+              submodule = new($1)
+              submodules << submodule
+            when %r{path\s*=\s*(.+)}
+              submodule.path = $1
+            when %r{url\s*=\s*(.+)}
+              submodule.url = $1
+            end
+          end
+
+          submodules
+        end
+      end
+
+      attr_reader :name
+      attr_accessor :path, :url
+
+      def initialize(name)
+        @name = name
+      end
+
+      def to_s
+        <<-GIT
+[submodule "#{name}"]
+  path = #{path}
+  url = #{url}
+GIT
+      end
+    end
+
+    desc "pathogen install GIT_REPO", "Install a plugin from a git repo"
+    def install(git_repo)
+      ensure_bundle
+
+      system %{bash -c "cd ~ && git submodule add -f #{git_repo} .vim/bundle/#{repo_name(git_repo)}"}
+      puts "#{repo_name(git_repo)} installed"
+    end
+
+    desc "pathogen update", "Update all Pathogen repos"
+    def update
+      system %{git submodule update}
+    end
+
+    desc "pathogen uninstall NAME", "Uninstall a plugin by name"
+    def uninstall(name)
+      system %{bash -c "cd ~ && git rm -f .vim/bundle/#{name} ; git rm --cached .vim/bundle/#{name} ; rm -Rf .vim/bundle/#{name}"}
+
+      File.open(tmp = File.expand_path('~/.gitmodules-tmp'), 'wb') { |fh| modules.reject { |mod| mod.name == name }.each { |mod| fh.print mod.to_s } }
+      FileUtils.mv tmp, MODULES_PATH
+
+      puts "#{name} uninstalled"
+    end
+
+    desc "pathogen list", "List all installed plugins"
+    def list
+      longest_name = modules.collect { |mod| mod.name.length }.max
+
+      modules.each do |mod|
+        puts "#{mod.name.ljust(longest_name).foreground(:green)} : #{mod.path.foreground(:yellow)} (#{mod.url.foreground(:blue)})"
+      end
+    end
+
+    no_tasks do
+      def ensure_bundle
+        BUNDLE_PATH.mkpath
+      end
+
+      def repo_name(repo)
+        repo.split('/').last.gsub('.git', '')
+      end
+
+      def modules
+        @modules ||= GitSubmodule.read(MODULES_PATH)
+      end
+    end
+  end
+
+  desc "pathogen <command>", "Pathogen commands"
+  subcommand 'pathogen', Pathogen
+
+  no_tasks do
+    def ensure_which(*commands)
+      commands.flatten.each do |command|
+        %x{which #{command} 2>/dev/null}
+        raise NotFoundError.new(command) if $?.exitstatus != 0
+      end
+    end
+
+    def with_system_ruby
+      oenv = ENV.to_hash
+
+      %w{GEM_HOME RUBY_VERSION MY_RUBY_HOME GEM_PATH}.each { |key| ENV.delete(key) }
+      ENV['PATH'] = ENV['PATH'].split(':').reject { |path| path['.rvm'] }.join(":")
+
+      yield
+
+      ENV.replace(oenv)
+    end
+
+    def with_sudo
+      if !@password
+        system "stty -echo"
+        $stdout.print "sudo password: "
+        $stdout.flush
+        @password = $stdin.readline.strip
+        system "stty echo"
+        $stdout.puts
+      end
+
+      system %{echo "#{@password}" | sudo -p '' -S #{yield}}
+    end
+  end
+
+  class NotFoundError < StandardError ; end
+end
+
+MacVimBuddy.start
