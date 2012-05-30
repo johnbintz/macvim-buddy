@@ -19,7 +19,7 @@ class MacVimBuddy < Thor
         with_sudo { "port deactivate -f libiconv" }
       end
 
-      system %{bash -c "cd /tmp/macvim/src && ./configure --with-features=huge --enable-rubyinterp --enable-pythoninterp --enable-perlinterp --enable-cscpe && make"}
+      system %{bash -c "cd /tmp/macvim/src && CC=/usr/bin/gcc ./configure --with-features=huge --enable-rubyinterp --enable-pythoninterp --enable-perlinterp --enable-cscope && make"}
 
       if is_macports
         with_sudo { "port activate libiconv" }
